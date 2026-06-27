@@ -697,11 +697,7 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
-        // ══════════════════════════════════════
         // 💊 PRESCRIPTIONS
-        // ══════════════════════════════════════
-
         app.post('/prescriptions', async (req, res) => {
             try {
                 const prescription = { ...req.body, createdAt: new Date() };
@@ -746,11 +742,7 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
-        // ══════════════════════════════════════
         // ⭐ REVIEWS
-        // ══════════════════════════════════════
-
         app.post('/reviews', async (req, res) => {
             try {
                 const result = await reviewsCollection.insertOne({ ...req.body, createdAt: new Date() });
@@ -759,7 +751,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.get('/reviews/my-reviews', async (req, res) => {
             try {
                 const result = await reviewsCollection.find({ email: req.query.email }).toArray();
@@ -768,7 +759,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.put('/reviews/:id', async (req, res) => {
             try {
                 const { doctorName, specialty, rating, comment } = req.body;
@@ -781,7 +771,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.delete('/reviews/:id', async (req, res) => {
             try {
                 const result = await reviewsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
