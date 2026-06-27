@@ -299,10 +299,8 @@ async function run() {
             res.send(result);
         });
 
-        // ==========================================
+ 
         // 👤 PATIENT DASHBOARD CRUD
-        // ==========================================
-
         // View Patient Appointments
         app.get('/patient/appointments/:email', async (req, res) => {
             try {
@@ -317,7 +315,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         // ২. Reschedule
         app.patch('/appointments/reschedule/:id', async (req, res) => {
             try {
@@ -333,7 +330,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         // ৩. Cancel
         app.patch('/appointments/cancel/:id', async (req, res) => {
             try {
@@ -346,7 +342,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         // ৪. Payment History
         app.get('/patient/payments/:email', async (req, res) => {
             try {
@@ -361,7 +356,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         // ৫. Dashboard Stats ✅ (fixed - no verifyToken, no email check)
         app.get('/patient/dashboard-stats/:email', async (req, res) => {
             try {
@@ -424,22 +418,15 @@ async function run() {
             }
         });
 
-        // ৬. Favorite Doctors ✅ (fixed - empty array fallback)
         app.get('/patient/favorite-doctors/:email', async (req, res) => {
             try {
                 const email = req.params.email;
-
-                // user collection থেকে favoriteDoctors array বের করা
                 const user = await usersCollection.findOne({ email: email });
-
-                // favoriteDoctors না থাকলে empty array return
                 const favoriteIds = user?.favoriteDoctors || [];
 
                 if (favoriteIds.length === 0) {
                     return res.send([]);
                 }
-
-                // Valid ObjectId গুলো filter করা (invalid ID তে crash এড়াতে)
                 const objectIds = favoriteIds
                     .filter(id => ObjectId.isValid(id))
                     .map(id => new ObjectId(id));
@@ -447,19 +434,15 @@ async function run() {
                 if (objectIds.length === 0) {
                     return res.send([]);
                 }
-
                 const doctors = await doctorsCollection
                     .find({ _id: { $in: objectIds } })
                     .toArray();
-
                 res.send(doctors);
             } catch (error) {
                 console.error('favorite-doctors error:', error);
                 res.status(500).send({ message: error.message });
             }
         });
-
-        // ৬. ✅ Favorite Doctors (নতুন — এটাও আগে ছিল না)
         app.get('/patient/favorite-doctors/:email', verifyToken, async (req, res) => {
             try {
                 const email = req.params.email;
@@ -542,17 +525,12 @@ async function run() {
         // উদাহরণ: আপনার ব্যাকএন্ডের পেমেন্ট এন্ডপয়েন্টটি এমন হওয়া উচিত
         app.get('/payments', async (req, res) => {
             try {
-                //verifyToken মিডলওয়্যার থেকে রিকোয়েস্ট করা ইউজারের ইমেইল নেওয়া
                 const email = req.decoded?.email;
-
                 if (!email) {
                     return res.status(401).send({ message: 'Unauthorized access' });
                 }
-
-                // শুধুমাত্র এই ইমেইলের পেমেন্টগুলো ডাটাবেজ থেকে খোঁজা
                 const query = { email: email };
                 const result = await paymentCollection.find(query).toArray();
-
                 res.send(result);
             } catch (error) {
                 res.status(500).send({ message: error.message });
@@ -561,23 +539,14 @@ async function run() {
         app.get('/patient/appointments/:email', async (req, res) => {
             try {
                 const email = req.params.email;
-
-                // টোকেনের ইমেইল এবং প্যারামসের ইমেইল ভ্যালিডেশন (নিরাপত্তার জন্য)
-                // if (req.decoded?.email !== email) {
-                //     return res.status(403).send({ message: 'Forbidden access' });
-                // }
-
-                const query = { patientEmail: email }; // আপনার DB-তে ফিল্ডের নাম 'email' বা 'patientEmail' যা আছে তা দিন
+                const query = { patientEmail: email }; 
                 const result = await appointmentCollection.find(query).toArray();
-
                 res.send(result);
             } catch (error) {
                 console.error("Error fetching patient appointments:", error);
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
-
-        // ─── ২. অ্যাপয়েন্টমেন্ট রিশেডিউল করা (PATCH) ───
         app.patch('/appointments/reschedule/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -588,21 +557,16 @@ async function run() {
                     $set: {
                         appointmentDate: appointmentDate,
                         appointmentTime: appointmentTime,
-                        appointmentStatus: "pending" // রিশেডিউল করলে স্ট্যাটাস সাধারণত আবার পেন্ডিং বা আপডেট হয়ে যায়
+                        appointmentStatus: "pending" 
                     }
                 };
-
                 const result = await appointmentCollection.updateOne(filter, updatedDoc);
-
-                // আপনার ফ্রন্টঅ্যান্ড `response.data.modifiedCount > 0` চেক করছে, তাই পুরো result অবজেক্ট পাঠানো হলো
                 res.send(result);
             } catch (error) {
                 console.error("Error rescheduling appointment:", error);
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
-
-        // ─── ৩. অ্যাপয়েন্টমেন্ট ক্যান্সেল করা (PATCH) ───
         app.patch('/appointments/cancel/:id', async (req, res) => {
             try {
                 const id = req.params.id;
@@ -610,10 +574,9 @@ async function run() {
                 const filter = { _id: new ObjectId(id) };
                 const updatedDoc = {
                     $set: {
-                        appointmentStatus: "cancelled" // স্ট্যাটাস পরিবর্তন করে cancelled করা হলো
+                        appointmentStatus: "cancelled" 
                     }
                 };
-
                 const result = await appointmentCollection.updateOne(filter, updatedDoc);
                 res.send(result);
             } catch (error) {
@@ -621,9 +584,9 @@ async function run() {
                 res.status(500).send({ message: "Internal Server Error" });
             }
         });
-        // ==========================================
+
+
         // 🩺 DOCTOR DASHBOARD CRUD
-        // ==========================================
         // Appointment Requests for a specific doctor
         app.get('/doctor/appointments/:email', verifyToken, async (req, res) => {
             const query = { doctorEmail: req.params.email };
@@ -661,30 +624,30 @@ async function run() {
             const result = await doctorsCollection.updateOne(filter, updatedDoc, options);
             res.send(result);
         });
+
+
+
+
         // ==========================================
         // 👑 ADMIN DASHBOARD API
         // ==========================================
         // Manage Users (View, Delete, Suspend)
         // index.js বা সার্ভার ফাইলে
         app.get('/admin/dashboard-stats', async (req, res) => {
-            // এখানে MongoDB এগ্রিগেশন ব্যবহার করে ডাটাগুলো আনুন
             const totalPatients = await usersCollection.countDocuments({ role: 'patient' });
             const totalDoctors = await doctorsCollection.countDocuments();
             const totalAppointments = await appointmentsCollection.countDocuments();
-
-            // ডক্টর পারফরম্যান্সের জন্য এগ্রিগেশন
             const doctorPerformance = await reviewsCollection.aggregate([
                 { $group: { _id: "$doctorId", avgRating: { $avg: "$rating" } } },
                 { $sort: { avgRating: -1 } },
                 { $limit: 3 },
-                // এখানে ডাক্তারদের নাম ও স্পেশালটি যুক্ত করার জন্য $lookup ব্যবহার করতে পারেন
             ]).toArray();
 
             res.send({
                 totalPatients,
                 totalDoctors,
                 totalAppointments,
-                doctorPerformance // অবশ্যই এটি যেন অ্যারে হয়
+                doctorPerformance 
             });
         });
         app.get('/users', async (req, res) => {
