@@ -352,11 +352,7 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
-        // ══════════════════════════════════════
         // 👤 PATIENT DASHBOARD
-        // ══════════════════════════════════════
-
         app.get('/patient/appointments/:email', async (req, res) => {
             try {
                 const result = await appointmentsCollection
@@ -368,7 +364,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.patch('/appointments/reschedule/:id', async (req, res) => {
             try {
                 const { appointmentDate, appointmentTime } = req.body;
@@ -381,7 +376,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.patch('/appointments/cancel/:id', async (req, res) => {
             try {
                 const result = await appointmentsCollection.updateOne(
@@ -393,7 +387,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.get('/patient/payments/:email', async (req, res) => {
             try {
                 const result = await paymentsCollection
@@ -405,7 +398,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.get('/patient/dashboard-stats/:email', async (req, res) => {
             try {
                 const email = req.params.email;
