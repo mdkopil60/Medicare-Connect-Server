@@ -464,8 +464,6 @@ async function run() {
                         { doctorEmail: email }
                     ]
                 }).sort({ createdAt: -1 }).toArray();
-
-                // patientName না থাকলে user collection থেকে আনো
                 const enriched = await Promise.all(appointments.map(async (apt) => {
                     if (!apt.patientName && apt.patientEmail) {
                         const patient = await usersCollection.findOne({ email: apt.patientEmail }).catch(() => null);
@@ -473,7 +471,6 @@ async function run() {
                     }
                     return apt;
                 }));
-
                 res.send(enriched);
             } catch (error) {
                 res.status(500).send({ message: error.message });
@@ -486,34 +483,27 @@ async function run() {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) doctor = await doctorsCollection.findOne({
                     doctorName: { $regex: user.name, $options: 'i' }
                 });
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
-
                 res.send(doctor);
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
-
-        // ✅ Doctor profile PUT — একটাই, create or update
         app.put('/doctor/profile/:email', async (req, res) => {
             try {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) doctor = await doctorsCollection.findOne({
                     doctorName: { $regex: user.name?.trim(), $options: 'i' }
                 });
-
-                // না পেলে নতুন create করো
                 if (!doctor) {
                     const newDoctor = {
                         ...req.body,
@@ -525,8 +515,6 @@ async function run() {
                     const result = await doctorsCollection.insertOne(newDoctor);
                     return res.send({ ...result, created: true });
                 }
-
-                // পেলে update করো
                 const result = await doctorsCollection.updateOne(
                     { _id: doctor._id },
                     {
@@ -543,21 +531,16 @@ async function run() {
             }
         });
 
-        // ✅ Doctor dashboard stats — email query দিয়ে
         app.get('/doctor/dashboard-stats', async (req, res) => {
             try {
                 const email = req.query.email;
                 if (!email) return res.status(400).send({ message: 'Email required' });
-
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
-
                 const today = new Date().toISOString().split('T')[0];
-
                 const allAppointments = await appointmentsCollection.find({
                     $or: [
                         { doctorId: doctor._id },
@@ -565,10 +548,8 @@ async function run() {
                         { doctorEmail: email }
                     ]
                 }).toArray();
-
                 const uniquePatients = new Set(allAppointments.map(a => a.patientEmail).filter(Boolean)).size;
                 const todaysAppointments = allAppointments.filter(a => a.appointmentDate === today).length;
-
                 const reviews = await reviewsCollection.find({
                     $or: [{ doctorId: doctor._id.toString() }, { doctorEmail: email }]
                 }).toArray();
@@ -576,7 +557,6 @@ async function run() {
                 const averageRating = totalReviews > 0
                     ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews).toFixed(1)
                     : "0.0";
-
                 res.send({ totalPatients: uniquePatients, todaysAppointments, totalReviews, averageRating });
             } catch (error) {
                 res.status(500).send({ message: error.message });
@@ -589,7 +569,6 @@ async function run() {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) doctor = await doctorsCollection.findOne({
