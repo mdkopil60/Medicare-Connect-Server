@@ -441,22 +441,15 @@ async function run() {
             }
         });
 
-        // ══════════════════════════════════════
         // 🩺 DOCTOR DASHBOARD
-        // ══════════════════════════════════════
-
-        // ✅ Doctor appointments — email দিয়ে doctor খুঁজে তার appointments আনো
         app.get('/doctor/appointments/:email', async (req, res) => {
             try {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
-
-                // ObjectId এবং string — দুইভাবেই match
                 const appointments = await appointmentsCollection.find({
                     $or: [
                         { doctorId: doctor._id },
