@@ -11,11 +11,10 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ✅ CORS — PATCH method যোগ করা হয়েছে
 app.use(cors({
     origin: 'http://localhost:3000',
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], // ✅ PATCH যোগ
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
 app.use(express.json());
@@ -29,7 +28,7 @@ const client = new MongoClient(uri, {
     }
 });
 
-// verifyToken — Better Auth ব্যবহার করায় এটা passthrough
+// Better Auth ব্যবহার করায় passthrough
 const verifyToken = (req, res, next) => next();
 
 async function run() {
@@ -37,7 +36,6 @@ async function run() {
         await client.connect();
         const database = client.db("medicare-connect");
 
-        // ✅ Collections — সব এখানে একবার define
         const usersCollection = database.collection("user");
         const doctorsCollection = database.collection("doctors");
         const appointmentsCollection = database.collection("appointments");
@@ -76,44 +74,6 @@ async function run() {
         // 👑 ADMIN ROUTES
         // ══════════════════════════════════════
 
-        // Admin Stats
-        app.get('/admin/dashboard-stats', async (req, res) => {
-            try {
-                const uniquePatients = await appointmentsCollection.distinct('patientEmail');
-                const totalPatients = uniquePatients.length;
-                const totalDoctors = await doctorsCollection.countDocuments();
-                const totalAppointments = await appointmentsCollection.countDocuments();
-
-                const doctorPerformance = await reviewsCollection.aggregate([
-                    { $group: { _id: "$doctorId", avgRating: { $avg: "$rating" }, reviewCount: { $sum: 1 } } },
-                    { $sort: { avgRating: -1 } },
-                    { $limit: 3 },
-                    {
-                        $lookup: {
-                            from: "doctors",
-                            localField: "_id",
-                            foreignField: "_id",
-                            as: "doctorInfo"
-                        }
-                    },
-                    { $unwind: { path: "$doctorInfo", preserveNullAndEmptyArrays: true } },
-                    {
-                        $project: {
-                            name: "$doctorInfo.doctorName",
-                            specialty: "$doctorInfo.specialization",
-                            rating: { $round: ["$avgRating", 1] },
-                            reviewCount: 1
-                        }
-                    }
-                ]).toArray();
-
-                res.send({ totalPatients, totalDoctors, totalAppointments, doctorPerformance });
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-
-        // Users Management
         app.get('/users', async (req, res) => {
             try {
                 const result = await usersCollection.find().toArray();
@@ -145,25 +105,11 @@ async function run() {
             }
         });
 
-        // Doctors Management
         app.get('/admin/doctors', async (req, res) => {
             const result = await doctorsCollection.find().toArray();
             res.send(result);
         });
 
-        // সব doctors fetch (admin এর জন্য) - verificationStatus filter ছাড়া
-        app.get('/doctors', async (req, res) => {
-            try {
-                const { status } = req.query; // optional filter
-                const query = status ? { verificationStatus: status } : {};
-                const doctors = await doctorsCollection.find(query).toArray();
-                res.send({ doctors });
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-
-        // Verify doctor
         app.patch('/doctors/verify/:id', async (req, res) => {
             try {
                 const result = await doctorsCollection.updateOne(
@@ -176,17 +122,15 @@ async function run() {
             }
         });
 
-        // Reject/Delete doctor
         app.delete('/doctors/reject/:id', async (req, res) => {
             try {
-                const result = await doctorsCollection.deleteOne(
-                    { _id: new ObjectId(req.params.id) }
-                );
+                const result = await doctorsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
                 res.send(result);
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
+
         app.get('/admin/appointments', async (req, res) => {
             const result = await appointmentsCollection.find().toArray();
             res.send(result);
@@ -196,24 +140,43 @@ async function run() {
             const result = await paymentsCollection.find().toArray();
             res.send(result);
         });
-        app.patch('/prescriptions/:id', async (req, res) => {
+
+        // ✅ Admin dashboard stats — একটাই
+        app.get('/admin/dashboard-stats', async (req, res) => {
             try {
-                const result = await prescriptionsCollection.updateOne(
-                    { _id: new ObjectId(req.params.id) },
-                    { $set: { ...req.body, updatedAt: new Date() } }
-                );
-                res.send(result);
+                const totalUsers = await usersCollection.countDocuments({});
+                const totalDoctors = await doctorsCollection.countDocuments({});
+                const totalAppointments = await appointmentsCollection.countDocuments({});
+                const totalPayments = await paymentsCollection.countDocuments({});
+                const pendingDoctors = await doctorsCollection.countDocuments({ verificationStatus: 'Pending' });
+                const payments = await paymentsCollection.find({}).toArray();
+                const topDoctors = await doctorsCollection.find({ verificationStatus: 'Verified' }).limit(3).toArray();
+                const totalRevenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+                res.send({
+                    totalPatients: totalUsers,
+                    totalDoctors,
+                    totalAppointments,
+                    totalPayments,
+                    totalRevenue,
+                    pendingDoctors,
+                    doctorPerformance: topDoctors.map(doc => ({
+                        name: doc.doctorName,
+                        specialty: doc.specialization,
+                        rating: doc.rating || '4.5'
+                    }))
+                });
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
 
-        app.delete('/prescriptions/:id', async (req, res) => {
+        app.get('/admin-analytics', async (req, res) => {
             try {
-                const result = await prescriptionsCollection.deleteOne(
-                    { _id: new ObjectId(req.params.id) }
-                );
-                res.send(result);
+                const totalDoctors = await doctorsCollection.countDocuments({});
+                const totalPatients = await usersCollection.countDocuments({});
+                const totalAppointments = await appointmentsCollection.countDocuments({});
+                res.send({ totalPatients, totalDoctors, totalAppointments });
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
@@ -221,6 +184,7 @@ async function run() {
 
         // ══════════════════════════════════════
         // 🏥 PUBLIC DOCTORS API
+        // ✅ একটাই /doctors route — সব feature এক জায়গায়
         // ══════════════════════════════════════
 
         app.get('/doctors', async (req, res) => {
@@ -228,11 +192,18 @@ async function run() {
                 const search = req.query.search || "";
                 const specialization = req.query.specialization || "";
                 const sort = req.query.sort || "";
+                const status = req.query.status || "";
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 9;
                 const skip = (page - 1) * limit;
 
-                let query = { verificationStatus: { $regex: /^verified$/i } };
+                // admin filter বা public filter
+                let query = {};
+                if (status) {
+                    query.verificationStatus = status;
+                } else {
+                    query.verificationStatus = { $regex: /^verified$/i };
+                }
                 if (search) query.doctorName = { $regex: search, $options: 'i' };
                 if (specialization) query.specialization = specialization;
 
@@ -319,6 +290,7 @@ async function run() {
                 const appResult = await appointmentsCollection.insertOne({
                     patientId: payload.patientId,
                     patientEmail: payload.patientEmail,
+                    patientName: payload.patientName || '',
                     doctorId: new ObjectId(payload.doctorId),
                     doctorEmail: payload.doctorEmail || "",
                     doctorName: payload.doctorName,
@@ -341,6 +313,41 @@ async function run() {
                     paymentDate: currentDate
                 });
                 res.send({ success: true, insertedId: appResult.insertedId });
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // ✅ appointments/status — একটাই
+        app.patch('/appointments/status/:id', async (req, res) => {
+            try {
+                const { status } = req.body;
+                const result = await appointmentsCollection.updateOne(
+                    { _id: new ObjectId(req.params.id) },
+                    { $set: { appointmentStatus: status } }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        app.get('/appointments', verifyToken, async (req, res) => {
+            try {
+                const appointments = await appointmentsCollection
+                    .find({})
+                    .sort({ appointmentDate: -1 })
+                    .toArray();
+                res.send(appointments);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        app.delete('/appointments/:id', verifyToken, async (req, res) => {
+            try {
+                const result = await appointmentsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+                res.send(result);
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
@@ -380,20 +387,6 @@ async function run() {
                 const result = await appointmentsCollection.updateOne(
                     { _id: new ObjectId(req.params.id) },
                     { $set: { appointmentStatus: 'cancelled' } }
-                );
-                res.send(result);
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-
-        // ✅ Doctor Accept/Reject/Complete — আলাদা URL
-        app.patch('/appointments/status/:id', async (req, res) => {
-            try {
-                const { status } = req.body;
-                const result = await appointmentsCollection.updateOne(
-                    { _id: new ObjectId(req.params.id) },
-                    { $set: { appointmentStatus: status } }
                 );
                 res.send(result);
             } catch (error) {
@@ -451,18 +444,168 @@ async function run() {
         // ══════════════════════════════════════
         // 🩺 DOCTOR DASHBOARD
         // ══════════════════════════════════════
-        // GET doctor's schedule from doctors collection
-        // GET - doctor's availableSlots by email
-        app.get('/doctor/schedule/:email', verifyToken, async (req, res) => {
+
+        // ✅ Doctor appointments — email দিয়ে doctor খুঁজে তার appointments আনো
+        app.get('/doctor/appointments/:email', async (req, res) => {
             try {
                 const email = req.params.email;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
 
-                const doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
+
+                // ObjectId এবং string — দুইভাবেই match
+                const appointments = await appointmentsCollection.find({
+                    $or: [
+                        { doctorId: doctor._id },
+                        { doctorId: doctor._id.toString() },
+                        { doctorEmail: email }
+                    ]
+                }).sort({ createdAt: -1 }).toArray();
+
+                // patientName না থাকলে user collection থেকে আনো
+                const enriched = await Promise.all(appointments.map(async (apt) => {
+                    if (!apt.patientName && apt.patientEmail) {
+                        const patient = await usersCollection.findOne({ email: apt.patientEmail }).catch(() => null);
+                        return { ...apt, patientName: patient?.name || apt.patientEmail };
+                    }
+                    return apt;
+                }));
+
+                res.send(enriched);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // ✅ Doctor profile GET
+        app.get('/doctor/profile/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send({ message: 'User not found' });
+
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) doctor = await doctorsCollection.findOne({
+                    doctorName: { $regex: user.name, $options: 'i' }
+                });
+                if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
+
+                res.send(doctor);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // ✅ Doctor profile PUT — একটাই, create or update
+        app.put('/doctor/profile/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send({ message: 'User not found' });
+
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) doctor = await doctorsCollection.findOne({
+                    doctorName: { $regex: user.name?.trim(), $options: 'i' }
+                });
+
+                // না পেলে নতুন create করো
+                if (!doctor) {
+                    const newDoctor = {
+                        ...req.body,
+                        email,
+                        userId: user._id.toString(),
+                        verificationStatus: 'Pending',
+                        createdAt: new Date()
+                    };
+                    const result = await doctorsCollection.insertOne(newDoctor);
+                    return res.send({ ...result, created: true });
+                }
+
+                // পেলে update করো
+                const result = await doctorsCollection.updateOne(
+                    { _id: doctor._id },
+                    {
+                        $set: {
+                            ...req.body,
+                            email,
+                            userId: user._id.toString(),
+                        }
+                    }
+                );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // ✅ Doctor dashboard stats — email query দিয়ে
+        app.get('/doctor/dashboard-stats', async (req, res) => {
+            try {
+                const email = req.query.email;
+                if (!email) return res.status(400).send({ message: 'Email required' });
+
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send({ message: 'User not found' });
+
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
+
+                const today = new Date().toISOString().split('T')[0];
+
+                const allAppointments = await appointmentsCollection.find({
+                    $or: [
+                        { doctorId: doctor._id },
+                        { doctorId: doctor._id.toString() },
+                        { doctorEmail: email }
+                    ]
+                }).toArray();
+
+                const uniquePatients = new Set(allAppointments.map(a => a.patientEmail).filter(Boolean)).size;
+                const todaysAppointments = allAppointments.filter(a => a.appointmentDate === today).length;
+
+                const reviews = await reviewsCollection.find({
+                    $or: [{ doctorId: doctor._id.toString() }, { doctorEmail: email }]
+                }).toArray();
+                const totalReviews = reviews.length;
+                const averageRating = totalReviews > 0
+                    ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews).toFixed(1)
+                    : "0.0";
+
+                res.send({ totalPatients: uniquePatients, todaysAppointments, totalReviews, averageRating });
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        // Doctor schedule routes
+        app.get('/doctor/schedule/:email', async (req, res) => {
+            try {
+                const email = req.params.email;
+                const user = await usersCollection.findOne({ email });
+                if (!user) return res.status(404).send({ message: 'User not found' });
+
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) doctor = await doctorsCollection.findOne({
+                    doctorName: { $regex: user.name, $options: 'i' }
+                });
                 if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
 
+                if (!doctor.userId) {
+                    await doctorsCollection.updateOne(
+                        { _id: doctor._id },
+                        { $set: { userId: user._id.toString() } }
+                    );
+                }
+
                 res.send({
+                    doctorId: doctor._id,
                     availableDays: doctor.availableDays || [],
                     availableSlots: doctor.availableSlots || []
                 });
@@ -471,112 +614,93 @@ async function run() {
             }
         });
 
-        // POST - add new slot to availableSlots array
-        app.post('/doctor/schedule/slot/:email', verifyToken, async (req, res) => {
+        app.post('/doctor/schedule/slot/:email', async (req, res) => {
             try {
                 const email = req.params.email;
-                const newSlot = req.body; // { day, startTime, endTime, maxPatients }
-
+                const { day, startTime, endTime, maxPatients } = req.body;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
 
-                const slotWithId = { ...newSlot, _id: new ObjectId() };
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
 
-                const result = await doctorsCollection.updateOne(
-                    { userId: user._id.toString() },
+                const newSlot = { _id: new ObjectId(), day, startTime, endTime, maxPatients: parseInt(maxPatients) };
+                await doctorsCollection.updateOne(
+                    { _id: doctor._id },
                     {
-                        $push: { availableSlots: slotWithId },
-                        $addToSet: { availableDays: newSlot.day }
+                        $push: { availableSlots: newSlot },
+                        $addToSet: { availableDays: day },
+                        $set: { userId: user._id.toString() }
                     }
                 );
-                res.send({ ...result, insertedSlotId: slotWithId._id });
+                res.send({ success: true, slot: newSlot });
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
 
-        // PATCH - update a specific slot by slotId
-        app.patch('/doctor/schedule/slot/:email/:slotId', verifyToken, async (req, res) => {
+        app.patch('/doctor/schedule/slot/:email/:slotId', async (req, res) => {
             try {
                 const { email, slotId } = req.params;
                 const { day, startTime, endTime, maxPatients } = req.body;
-
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
 
-                const result = await doctorsCollection.updateOne(
-                    {
-                        userId: user._id.toString(),
-                        'availableSlots._id': new ObjectId(slotId)
-                    },
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
+
+                await doctorsCollection.updateOne(
+                    { _id: doctor._id, 'availableSlots._id': new ObjectId(slotId) },
                     {
                         $set: {
                             'availableSlots.$.day': day,
                             'availableSlots.$.startTime': startTime,
                             'availableSlots.$.endTime': endTime,
-                            'availableSlots.$.maxPatients': maxPatients,
+                            'availableSlots.$.maxPatients': parseInt(maxPatients)
                         }
                     }
                 );
 
-                // availableDays sync করো
-                const updatedDoctor = await doctorsCollection.findOne({ userId: user._id.toString() });
-                const allDays = [...new Set(updatedDoctor.availableSlots.map(s => s.day))];
-                await doctorsCollection.updateOne(
-                    { userId: user._id.toString() },
-                    { $set: { availableDays: allDays } }
-                );
+                const updated = await doctorsCollection.findOne({ _id: doctor._id });
+                const allDays = [...new Set((updated.availableSlots || []).map(s => s.day).filter(Boolean))];
+                await doctorsCollection.updateOne({ _id: doctor._id }, { $set: { availableDays: allDays } });
 
-                res.send(result);
+                res.send({ success: true });
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
 
-        // DELETE - remove a specific slot by slotId
-        app.delete('/doctor/schedule/slot/:email/:slotId', verifyToken, async (req, res) => {
+        app.delete('/doctor/schedule/slot/:email/:slotId', async (req, res) => {
             try {
                 const { email, slotId } = req.params;
-
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
 
-                const result = await doctorsCollection.updateOne(
-                    { userId: user._id.toString() },
+                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
+                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+                if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
+
+                await doctorsCollection.updateOne(
+                    { _id: doctor._id },
                     { $pull: { availableSlots: { _id: new ObjectId(slotId) } } }
                 );
 
-                // Delete হওয়ার পর availableDays sync করো
-                const updatedDoctor = await doctorsCollection.findOne({ userId: user._id.toString() });
-                const remainingDays = [...new Set((updatedDoctor.availableSlots || []).map(s => s.day))];
-                await doctorsCollection.updateOne(
-                    { userId: user._id.toString() },
-                    { $set: { availableDays: remainingDays } }
-                );
+                const updated = await doctorsCollection.findOne({ _id: doctor._id });
+                const allDays = [...new Set((updated.availableSlots || []).map(s => s.day).filter(Boolean))];
+                await doctorsCollection.updateOne({ _id: doctor._id }, { $set: { availableDays: allDays } });
 
-                res.send(result);
+                res.send({ success: true });
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
         });
-        app.get('/doctor/appointments/:email', async (req, res) => {
-            try {
-                const email = req.params.email;
-                const doctorUser = await usersCollection.findOne({ email });
-                const doctorProfile = await doctorsCollection.findOne({
-                    userId: doctorUser?._id?.toString()
-                });
-                const result = await appointmentsCollection.find({
-                    $or: [
-                        { doctorEmail: email },
-                        { doctorName: doctorProfile?.doctorName },
-                    ]
-                }).sort({ createdAt: -1 }).toArray();
-                res.send(result);
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
+
+        // ══════════════════════════════════════
+        // 💊 PRESCRIPTIONS
+        // ══════════════════════════════════════
 
         app.post('/prescriptions', async (req, res) => {
             try {
@@ -602,22 +726,21 @@ async function run() {
             }
         });
 
-        app.put('/doctor/profile/:email', async (req, res) => {
+        app.patch('/prescriptions/:id', async (req, res) => {
             try {
-                const updateData = req.body;
-                const result = await doctorsCollection.updateOne(
-                    { email: req.params.email },
-                    {
-                        $set: {
-                            qualifications: updateData.qualifications,
-                            experience: parseInt(updateData.experience),
-                            consultationFee: parseFloat(updateData.consultationFee),
-                            availableSlots: updateData.availableSlots,
-                            availableDays: updateData.availableDays,
-                        }
-                    },
-                    { upsert: true } // ✅ typo fix: upswith → upsert
+                const result = await prescriptionsCollection.updateOne(
+                    { _id: new ObjectId(req.params.id) },
+                    { $set: { ...req.body, updatedAt: new Date() } }
                 );
+                res.send(result);
+            } catch (error) {
+                res.status(500).send({ message: error.message });
+            }
+        });
+
+        app.delete('/prescriptions/:id', async (req, res) => {
+            try {
+                const result = await prescriptionsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
                 res.send(result);
             } catch (error) {
                 res.status(500).send({ message: error.message });
@@ -669,95 +792,13 @@ async function run() {
         });
 
         // ══════════════════════════════════════
-        // 📊 ADMIN ANALYTICS
+        // 💰 PAYMENTS
         // ══════════════════════════════════════
-        // GET all payments - admin এর জন্য
+
         app.get('/payments', verifyToken, async (req, res) => {
             try {
-                const payments = await paymentsCollection
-                    .find({})
-                    .sort({ _id: -1 })
-                    .toArray();
+                const payments = await paymentsCollection.find({}).sort({ _id: -1 }).toArray();
                 res.send(payments);
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-        app.get('/admin/dashboard-stats', async (req, res) => {
-            try {
-                const totalUsers = await usersCollection.countDocuments({});
-                const totalDoctors = await doctorsCollection.countDocuments({});
-                const totalAppointments = await appointmentsCollection.countDocuments({});
-                const totalPayments = await paymentsCollection.countDocuments({});
-                const pendingDoctors = await doctorsCollection.countDocuments({ verificationStatus: 'Pending' });
-                const payments = await paymentsCollection.find({}).toArray();
-                const topDoctors = await doctorsCollection.find({ verificationStatus: 'Verified' }).limit(3).toArray();
-
-                const totalRevenue = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-
-                res.send({
-                    totalPatients: totalUsers,
-                    totalDoctors,
-                    totalAppointments,
-                    totalPayments,
-                    totalRevenue,
-                    pendingDoctors,
-                    doctorPerformance: topDoctors.map(doc => ({
-                        name: doc.doctorName,
-                        specialty: doc.specialization,
-                        rating: doc.rating || '4.5'
-                    }))
-                });
-            } catch (error) {
-                console.error("Dashboard error:", error.message);
-                res.status(500).send({ message: error.message });
-            }
-        });
-        // পুরনো route fix
-      app.get('/admin-analytics', async (req, res) => {
-    try {
-        const totalDoctors = await doctorsCollection.countDocuments({});
-        const totalPatients = await usersCollection.countDocuments({});
-        const totalAppointments = await appointmentsCollection.countDocuments({});
-        res.send({ totalPatients, totalDoctors, totalAppointments });
-    } catch (error) {
-        res.status(500).send({ message: error.message });
-    }
-});
-        // GET all appointments - admin এর জন্য
-        app.get('/appointments', verifyToken, async (req, res) => {
-            try {
-                const appointments = await appointmentsCollection
-                    .find({})
-                    .sort({ appointmentDate: -1 })
-                    .toArray();
-                res.send(appointments);
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-
-        // PATCH - appointment status update
-        app.patch('/appointments/status/:id', verifyToken, async (req, res) => {
-            try {
-                const { status } = req.body;
-                const result = await appointmentsCollection.updateOne(
-                    { _id: new ObjectId(req.params.id) },
-                    { $set: { appointmentStatus: status } }
-                );
-                res.send(result);
-            } catch (error) {
-                res.status(500).send({ message: error.message });
-            }
-        });
-
-        // DELETE - appointment
-        app.delete('/appointments/:id', verifyToken, async (req, res) => {
-            try {
-                const result = await appointmentsCollection.deleteOne(
-                    { _id: new ObjectId(req.params.id) }
-                );
-                res.send(result);
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
