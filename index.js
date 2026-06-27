@@ -791,10 +791,7 @@ async function run() {
             }
         });
 
-        // ══════════════════════════════════════
         // 💰 PAYMENTS
-        // ══════════════════════════════════════
-
         app.get('/payments', verifyToken, async (req, res) => {
             try {
                 const payments = await paymentsCollection.find({}).sort({ _id: -1 }).toArray();
@@ -803,7 +800,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         console.log("✅ Connected to MongoDB!");
     } catch (error) {
         console.error("MongoDB Connection Error:", error);
@@ -811,11 +807,9 @@ async function run() {
 }
 
 run().catch(console.dir);
-
 app.get('/', (req, res) => {
     res.send('MediCare Connect Server is Running!');
 });
-
 app.listen(port, () => {
     console.log(`Server running on port ${port}`);
 });
