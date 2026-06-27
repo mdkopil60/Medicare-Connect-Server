@@ -596,14 +596,12 @@ async function run() {
                     doctorName: { $regex: user.name, $options: 'i' }
                 });
                 if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
-
                 if (!doctor.userId) {
                     await doctorsCollection.updateOne(
                         { _id: doctor._id },
                         { $set: { userId: user._id.toString() } }
                     );
                 }
-
                 res.send({
                     doctorId: doctor._id,
                     availableDays: doctor.availableDays || [],
@@ -620,11 +618,9 @@ async function run() {
                 const { day, startTime, endTime, maxPatients } = req.body;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
-
                 const newSlot = { _id: new ObjectId(), day, startTime, endTime, maxPatients: parseInt(maxPatients) };
                 await doctorsCollection.updateOne(
                     { _id: doctor._id },
@@ -646,11 +642,9 @@ async function run() {
                 const { day, startTime, endTime, maxPatients } = req.body;
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
                 if (!doctor) doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor profile not found' });
-
                 await doctorsCollection.updateOne(
                     { _id: doctor._id, 'availableSlots._id': new ObjectId(slotId) },
                     {
@@ -662,11 +656,9 @@ async function run() {
                         }
                     }
                 );
-
                 const updated = await doctorsCollection.findOne({ _id: doctor._id });
                 const allDays = [...new Set((updated.availableSlots || []).map(s => s.day).filter(Boolean))];
                 await doctorsCollection.updateOne({ _id: doctor._id }, { $set: { availableDays: allDays } });
-
                 res.send({ success: true });
             } catch (error) {
                 res.status(500).send({ message: error.message });
