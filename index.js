@@ -28,7 +28,6 @@ const client = new MongoClient(uri, {
     }
 });
 
-// Better Auth ব্যবহার করায় passthrough
 const verifyToken = (req, res, next) => next();
 
 async function run() {
@@ -42,10 +41,7 @@ async function run() {
         const paymentsCollection = database.collection("payments");
         const prescriptionsCollection = database.collection("prescriptions");
 
-        // ══════════════════════════════════════
-        // 🎟️ AUTH & USERS
-        // ══════════════════════════════════════
-
+        //  AUTH & USERS
         app.post('/jwt', async (req, res) => {
             const user = req.body;
             const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '12h' });
@@ -69,9 +65,7 @@ async function run() {
             res.send({ role: user?.role || 'patient' });
         });
 
-        // ══════════════════════════════════════
-        // 👑 ADMIN ROUTES
-        // ══════════════════════════════════════
+        //  ADMIN ROUTES
 
         app.get('/users', async (req, res) => {
             try {
@@ -140,7 +134,7 @@ async function run() {
             res.send(result);
         });
 
-        // ✅ Admin dashboard stats — একটাই
+        //  Admin dashboard stats — 
         app.get('/admin/dashboard-stats', async (req, res) => {
             try {
                 const totalUsers = await usersCollection.countDocuments({});
@@ -181,10 +175,7 @@ async function run() {
             }
         });
 
-        // ══════════════════════════════════════
-        // 🏥 PUBLIC DOCTORS API
-        // ✅ একটাই /doctors route — সব feature এক জায়গায়
-        // ══════════════════════════════════════
+        //  PUBLIC DOCTORS API
 
         app.get('/doctors', async (req, res) => {
             try {
@@ -200,32 +191,24 @@ async function run() {
                 let query = {};
 
                 if (admin === 'true') {
-                    // ✅ Admin mode — সব doctors, status filter optional
                     if (status) {
                         query.verificationStatus = { $regex: new RegExp(`^${status}$`, 'i') };
                     }
-                    // status না থাকলে সব doctors
                 } else if (status) {
-                    // specific status দিয়ে filter
                     query.verificationStatus = { $regex: new RegExp(`^${status}$`, 'i') };
                 } else {
-                    // ✅ Public mode — শুধু verified
                     query.verificationStatus = { $regex: /^verified$/i };
                 }
-
                 if (search) query.doctorName = { $regex: search, $options: 'i' };
                 if (specialization) query.specialization = specialization;
-
                 let sortObj = {};
                 if (sort === "fee_asc") sortObj.consultationFee = 1;
                 else if (sort === "fee_desc") sortObj.consultationFee = -1;
                 else if (sort === "exp_desc") sortObj.experience = -1;
                 else if (sort === "rating_desc") sortObj.averageRating = -1;
                 else sortObj._id = -1;
-
                 const totalDoctors = await doctorsCollection.countDocuments(query);
                 const doctors = await doctorsCollection.find(query).sort(sortObj).skip(skip).limit(limit).toArray();
-
                 res.send({
                     doctors,
                     totalPages: Math.ceil(totalDoctors / limit),
@@ -256,9 +239,7 @@ async function run() {
             res.send({ totalDoctors, totalPatients: uniquePatients.length, totalAppointments, totalReviews });
         });
 
-        // ══════════════════════════════════════
-        // 💳 STRIPE & APPOINTMENTS
-        // ══════════════════════════════════════
+        //  STRIPE & APPOINTMENTS
 
         app.post('/create-checkout-session', async (req, res) => {
             try {
@@ -333,7 +314,7 @@ async function run() {
             }
         });
 
-        // ✅ appointments/status — একটাই
+        // appointments/status 
         app.patch('/appointments/status/:id', async (req, res) => {
             try {
                 const { status } = req.body;
@@ -452,11 +433,8 @@ async function run() {
         app.get('/doctor/appointments/:email', async (req, res) => {
             try {
                 const email = req.params.email;
-
                 const user = await usersCollection.findOne({ email });
                 if (!user) return res.status(404).send({ message: 'User not found' });
-
-                // সব possible ways-এ doctor খোঁজো
                 let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
 
                 if (!doctor) {
@@ -464,8 +442,6 @@ async function run() {
                         doctorName: { $regex: user.name?.trim(), $options: 'i' }
                     });
                 }
-
-                // Doctor না পেলেও doctorEmail দিয়ে appointments খোঁজো
                 const query = doctor
                     ? {
                         $or: [
@@ -486,15 +462,13 @@ async function run() {
                     .find(query)
                     .sort({ appointmentDate: -1 })
                     .toArray();
-
-                // ✅ Doctor না পাওয়া গেলেও 404 না দিয়ে empty array পাঠাও
                 res.send(appointments);
             } catch (error) {
                 console.error("Error:", error);
                 res.status(500).send({ message: error.message });
             }
         });
-        // ✅ Doctor profile GET
+        //  Doctor profile GET
         app.get('/doctor/profile/:email', async (req, res) => {
             try {
                 const email = req.params.email;
@@ -551,8 +525,6 @@ async function run() {
             try {
                 const email = req.query.email;
                 if (!email) return res.status(400).send({ message: 'Email required' });
-
-                // ✅ সরাসরি doctors collection এ email দিয়ে খোঁজো — users collection লাগবে না
                 const doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
 
@@ -585,9 +557,7 @@ async function run() {
                 const averageRating = totalReviews > 0
                     ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews).toFixed(1)
                     : "0.0";
-
                 res.send({ totalPatients: uniquePatients, todaysAppointments, totalReviews, averageRating });
-
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
@@ -661,15 +631,14 @@ async function run() {
                 }
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
 
-                // ✅ slotId valid ObjectId কিনা check করো
+                // slotId valid ObjectId check
                 let slotFilter;
                 try {
                     slotFilter = { 'availableSlots._id': new ObjectId(slotId) };
                 } catch {
-                    // ObjectId না হলে string দিয়ে match করো
+                    // ObjectId string match 
                     slotFilter = { 'availableSlots._id': slotId };
                 }
-
                 const result = await doctorsCollection.updateOne(
                     { _id: doctor._id, ...slotFilter },
                     {
@@ -681,7 +650,6 @@ async function run() {
                         }
                     }
                 );
-
                 const updated = await doctorsCollection.findOne({ _id: doctor._id });
                 const allDays = [...new Set((updated.availableSlots || []).map(s => s.day).filter(Boolean))];
                 await doctorsCollection.updateOne(
@@ -709,8 +677,6 @@ async function run() {
                     });
                 }
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
-
-                // ✅ ObjectId বা string দুটোই try করো
                 let pullFilter;
                 try {
                     pullFilter = { _id: new ObjectId(slotId) };
