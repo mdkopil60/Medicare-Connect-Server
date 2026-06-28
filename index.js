@@ -547,17 +547,17 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.get('/doctor/dashboard-stats', async (req, res) => {
             try {
                 const email = req.query.email;
                 if (!email) return res.status(400).send({ message: 'Email required' });
-                const user = await usersCollection.findOne({ email });
-                if (!user) return res.status(404).send({ message: 'User not found' });
-                let doctor = await doctorsCollection.findOne({ userId: user._id.toString() });
-                if (!doctor) doctor = await doctorsCollection.findOne({ email });
+
+                // ✅ সরাসরি doctors collection এ email দিয়ে খোঁজো — users collection লাগবে না
+                const doctor = await doctorsCollection.findOne({ email });
                 if (!doctor) return res.status(404).send({ message: 'Doctor not found' });
+
                 const today = new Date().toISOString().split('T')[0];
+
                 const allAppointments = await appointmentsCollection.find({
                     $or: [
                         { doctorId: doctor._id },
@@ -565,16 +565,29 @@ async function run() {
                         { doctorEmail: email }
                     ]
                 }).toArray();
-                const uniquePatients = new Set(allAppointments.map(a => a.patientEmail).filter(Boolean)).size;
-                const todaysAppointments = allAppointments.filter(a => a.appointmentDate === today).length;
+
+                const uniquePatients = new Set(
+                    allAppointments.map(a => a.patientEmail).filter(Boolean)
+                ).size;
+
+                const todaysAppointments = allAppointments.filter(
+                    a => a.appointmentDate === today
+                ).length;
+
                 const reviews = await reviewsCollection.find({
-                    $or: [{ doctorId: doctor._id.toString() }, { doctorEmail: email }]
+                    $or: [
+                        { doctorId: doctor._id.toString() },
+                        { doctorEmail: email }
+                    ]
                 }).toArray();
+
                 const totalReviews = reviews.length;
                 const averageRating = totalReviews > 0
                     ? (reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / totalReviews).toFixed(1)
                     : "0.0";
+
                 res.send({ totalPatients: uniquePatients, todaysAppointments, totalReviews, averageRating });
+
             } catch (error) {
                 res.status(500).send({ message: error.message });
             }
