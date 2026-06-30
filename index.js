@@ -13,8 +13,7 @@ const port = process.env.PORT || 5000;
 
 app.use(cors({
     origin: [
-        'http://localhost:3000',
-        'https://medicare-connect-client-psi.vercel.app'
+        process.env.LOCAL_URI
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -36,7 +35,7 @@ const verifyToken = (req, res, next) => next();
 async function run() {
     try {
         await client.connect();
-        console.log("✅ Connected to MongoDB!");
+        console.log(" Connected to MongoDB!");
 
         const database = client.db("medicare-connect");
         const usersCollection = database.collection("user");
@@ -46,12 +45,10 @@ async function run() {
         const paymentsCollection = database.collection("payments");
         const prescriptionsCollection = database.collection("prescriptions");
 
-        // ✅ ROOT ROUTE — এটা না থাকলে "Cannot GET /" দেখায়
         app.get('/', (req, res) => {
-            res.send('MediCare Connect Server is Running! ✅');
+            res.send('MediCare Connect Server is Running! ');
         });
 
-        // ✅ STATISTICS ROUTE — এক্সামিনার এটাই খুঁজছিলেন
         app.get('/statistics', async (req, res) => {
             try {
                 const totalDoctors = await doctorsCollection.countDocuments({});
@@ -217,9 +214,7 @@ async function run() {
                 const page = parseInt(req.query.page) || 1;
                 const limit = parseInt(req.query.limit) || 9;
                 const skip = (page - 1) * limit;
-
                 let query = {};
-
                 if (admin === 'true') {
                     if (status) {
                         query.verificationStatus = { $regex: new RegExp(`^${status}$`, 'i') };
@@ -286,8 +281,8 @@ async function run() {
                         },
                         quantity: 1,
                     }],
-                    success_url: 'http://localhost:3000/payment-success?session_id={CHECKOUT_SESSION_ID}',
-                    cancel_url: 'http://localhost:3000/payment-cancel',
+                    success_url: `${process.env.LOCAL_URI}/payment-success?session_id={CHECKOUT_SESSION_ID},
+                    cancel_url: '${process.env.LOCAL_URI}/payment-cancel'`,
                 });
                 res.send({ id: session.id, url: session.url });
             } catch (error) {
@@ -557,7 +552,6 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
-
         app.get('/doctor/dashboard-stats', async (req, res) => {
             try {
                 const email = req.query.email;
