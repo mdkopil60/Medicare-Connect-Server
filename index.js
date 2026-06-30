@@ -13,7 +13,7 @@ const port = process.env.PORT || 5000;
 
 app.use(cors({
     origin: [
-        process.env.LOCAL_URI
+       process.env.LOCAL_URI
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -282,7 +282,7 @@ async function run() {
                         quantity: 1,
                     }],
                     success_url: `${process.env.LOCAL_URI}/payment-success?session_id={CHECKOUT_SESSION_ID},
-                    cancel_url: '${process.env.LOCAL_URI}/payment-cancel'`,
+                    cancel_url: '${process.env.LOCAL_URI}/payment-cancel`,
                 });
                 res.send({ id: session.id, url: session.url });
             } catch (error) {
@@ -552,6 +552,7 @@ async function run() {
                 res.status(500).send({ message: error.message });
             }
         });
+
         app.get('/doctor/dashboard-stats', async (req, res) => {
             try {
                 const email = req.query.email;
